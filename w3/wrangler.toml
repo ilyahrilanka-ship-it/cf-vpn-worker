@@ -1,0 +1,12 @@
+name = "vpn-test3"
+main = "worker3.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[durable_objects.bindings]]
+name = "DO"
+class_name = "VlessDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["VlessDO"]
