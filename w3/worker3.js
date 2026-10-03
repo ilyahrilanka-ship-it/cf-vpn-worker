@@ -19,9 +19,11 @@ function uuidToBytes(u) {
 const UUID_BYTES = uuidToBytes(UUID);
 
 function parseHeader(buf) {
+  // VLESS: [0] version=0x00, [1..16] UUID, [17] addons len, addons, [2] port, [1] atyp, addr, payload
   if (buf.length < 24) return null;
-  for (let i = 0; i < 16; i++) if (buf[i] !== UUID_BYTES[i]) return null;
-  let p = 16;
+  if (buf[0] !== 0x00) return null;
+  for (let i = 0; i < 16; i++) if (buf[1 + i] !== UUID_BYTES[i]) return null;
+  let p = 17;
   const addonsLen = buf[p++];
   p += addonsLen;
   if (p + 2 > buf.length) return null;
@@ -33,12 +35,12 @@ function parseHeader(buf) {
     hostname = `${buf[p]}.${buf[p + 1]}.${buf[p + 2]}.${buf[p + 3]}`;
     p += 4;
   } else if (atyp === 2) {
+    if (p >= buf.length) return null;
     const len = buf[p++];
+    if (p + len > buf.length) return null;
     hostname = new TextDecoder().decode(buf.subarray(p, p + len));
     p += len;
   } else if (atyp === 3) {
-    const a = [];
-    for (let i = 0; i < 8; i++) a.push(((buf[p + i] << 8) | buf[p + i + 1]).toString(16));
     hostname = new TextDecoder().decode(buf.subarray(p, p + 16));
     p += 16;
   } else return null;
