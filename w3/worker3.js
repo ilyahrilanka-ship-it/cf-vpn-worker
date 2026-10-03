@@ -183,6 +183,10 @@ export class VlessDO {
           ws.send(s.buf);
           sent += s.buf.length;
           s.buf = null;
+          // У ws.send() в Durable Objects нет обратной связи о давлении. Без паузы
+          // очередь отправки переполняется, и данные клиенту перестают приходить,
+          // хотя сокет на цель продолжает отдавать поток. Даём очереди сброситься.
+          await new Promise((r) => setTimeout(r, 25));
           if (sent % 2097152 < MAX) await this.diag("sent", `${sent} Б из ${read}`);
         }
       }
