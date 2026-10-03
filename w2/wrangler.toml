@@ -1,0 +1,4 @@
+name = "vpn-test2"
+main = "worker2.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
