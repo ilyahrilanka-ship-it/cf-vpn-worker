@@ -56,6 +56,15 @@ export class VlessDO {
   }
 
   async fetch(request) {
+    const u = new URL(request.url);
+    if (u.pathname === "/diag") {
+      const d = (await this.ctx.storage.get("diag")) || { msg: "нет данных" };
+      return new Response(JSON.stringify(d), { headers: { "content-type": "application/json" } });
+    }
+    if (u.pathname === "/reset") {
+      await this.ctx.storage.delete("diag");
+      return new Response("reset ok");
+    }
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("VLESS endpoint (Durable Object)", { status: 200 });
     }
@@ -67,33 +76,52 @@ export class VlessDO {
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  async diag(msg, extra) {
+    try {
+      await this.ctx.storage.put("diag", { msg, extra: String(extra || ""), at: Date.now() });
+    } catch (e) { }
+  }
+
   async webSocketMessage(ws, message) {
-    const data = message instanceof ArrayBuffer ? new Uint8Array(message) : new Uint8Array(message.buffer);
+    let data;
+    try {
+      data = message instanceof ArrayBuffer ? new Uint8Array(message)
+        : new Uint8Array(message.buffer || message);
+    } catch (e) {
+      await this.diag("convert-fail", e && e.message); return;
+    }
     const st = ws.deserializeAttachment();
     if (!st || !st.started) {
+      await this.diag("first-msg", `bytes=${data.length} head=${Array.from(data.slice(0,8)).map(x=>x.toString(16).padStart(2,"0")).join("")}`);
       ws.serializeAttachment({ started: true });
-      const h = parseHeader(data);
-      if (!h) { ws.close(1002, "bad header"); return; }
+      let h = null;
+      try { h = parseHeader(data); }
+      catch (e) { await this.diag("parse-throw", e && e.message); }
+      if (!h) { await this.diag("header-null", `len=${data.length}`); ws.close(1002, "bad header"); return; }
+      await this.diag("target", `${h.hostname}:${h.port} payload=${h.payload.length}`);
       try {
         const sock = connect({ hostname: h.hostname, port: h.port });
+        await this.diag("connect-called", `${h.hostname}:${h.port}`);
         this.writer = sock.writable.getWriter();
         this.reader = sock.readable.getReader();
         await sock.opened;
-        // ответ VLESS: версия 0x00, длина аддонов 0x00
+        await this.diag("opened", `${h.hostname}:${h.port}`);
         const head = new Uint8Array([0, 0]);
-        const out = new Uint8Array(head.length + h.payload.length);
-        out.set(head, 0);
-        out.set(h.payload, head.length);
-        if (h.payload.length) ws.send(out);
-        else this.pending = true;
+        if (h.payload.length) {
+          const out = new Uint8Array(head.length + h.payload.length);
+          out.set(head, 0); out.set(h.payload, head.length);
+          ws.send(out);
+        } else this.pending = true;
         this.pumpToWs(ws);
       } catch (e) {
-        ws.close(1011, "connect failed");
+        await this.diag("connect-fail", e && (e.message || e));
+        try { ws.close(1011, "connect failed"); } catch (e2) { }
       }
       return;
     }
     if (this.writer) {
-      try { await this.writer.write(data); } catch (e) { }
+      try { await this.writer.write(data); }
+      catch (e) { await this.diag("write-fail", e && e.message); }
     }
   }
 
@@ -127,6 +155,10 @@ export class VlessDO {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/diag" || url.pathname === "/reset") {
+      const id0 = env.DO.idFromName("vless-main");
+      return env.DO.get(id0).fetch(request);
+    }
     if (url.pathname === VLESSSUB) return this.sub(request, env);
     if (url.pathname === "/sub") return this.sub(request, env);
     const id = env.DO.idFromName("vless-main");
