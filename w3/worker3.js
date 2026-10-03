@@ -18,34 +18,49 @@ function uuidToBytes(u) {
 
 const UUID_BYTES = uuidToBytes(UUID);
 
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+
+// Разбор VLESS-адреса. У клиента между addonsLen и портом может стоять лишний байт
+// (наблюдалось у sing-box), поэтому вместо жёстких смещений перебираем варианты
+// и выбираем самый правдоподобный: сначала домен, потом IPv4, потом IPv6.
 function parseHeader(buf) {
-  // VLESS: [0] version=0x00, [1..16] UUID, [17] addons len, addons, [2] port, [1] atyp, addr, payload
   if (buf.length < 24) return null;
   if (buf[0] !== 0x00) return null;
   for (let i = 0; i < 16; i++) if (buf[1 + i] !== UUID_BYTES[i]) return null;
-  let p = 17;
-  const addonsLen = buf[p++];
-  p += addonsLen;
-  if (p + 2 > buf.length) return null;
-  const port = (buf[p] << 8) | buf[p + 1];
-  p += 2;
-  const atyp = buf[p++];
-  let hostname;
-  if (atyp === 1) {
-    hostname = `${buf[p]}.${buf[p + 1]}.${buf[p + 2]}.${buf[p + 3]}`;
-    p += 4;
-  } else if (atyp === 2) {
-    if (p >= buf.length) return null;
-    const len = buf[p++];
-    if (p + len > buf.length) return null;
-    hostname = new TextDecoder().decode(buf.subarray(p, p + len));
-    p += len;
-  } else if (atyp === 3) {
-    hostname = new TextDecoder().decode(buf.subarray(p, p + 16));
-    p += 16;
-  } else return null;
-  if (p > buf.length) return null;
-  return { port, hostname, payload: buf.subarray(p) };
+
+  const seen = [];
+  for (let start = 17; start < Math.min(buf.length - 2, 32); start++) {
+    const port = (buf[start] << 8) | buf[start + 1];
+    if (port < 1 || port > 65535) continue;
+    let p = start + 2;
+    const atyp = buf[p++];
+    let hostname = null;
+    if (atyp === 1) {
+      if (p + 4 > buf.length) continue;
+      hostname = `${buf[p]}.${buf[p + 1]}.${buf[p + 2]}.${buf[p + 3]}`;
+      p += 4;
+    } else if (atyp === 2) {
+      if (p >= buf.length) continue;
+      const len = buf[p++];
+      if (len < 1 || p + len > buf.length) continue;
+      hostname = new TextDecoder().decode(buf.subarray(p, p + len));
+      p += len;
+    } else if (atyp === 3) {
+      if (p + 16 > buf.length) continue;
+      hostname = new TextDecoder().decode(buf.subarray(p, p + 16));
+      p += 16;
+    } else continue;
+    if (p > buf.length) continue;
+    seen.push({ port, hostname, payload: buf.subarray(p), atyp });
+  }
+  if (!seen.length) return null;
+
+  let best = seen.find((c) => c.atyp === 2 && DOMAIN_RE.test(c.hostname));
+  if (!best) best = seen.find((c) => c.atyp === 1 && IPV4_RE.test(c.hostname));
+  if (!best) best = seen.find((c) => c.atyp === 3 && c.hostname.indexOf(":") > 0);
+  if (!best) best = seen[0];
+  return best;
 }
 
 export class VlessDO {
