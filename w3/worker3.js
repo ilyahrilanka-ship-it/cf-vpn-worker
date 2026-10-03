@@ -149,11 +149,14 @@ export class VlessDO {
   }
 
   async pumpToWs(ws) {
+    let chunks = 0, bytes = 0, firstLen = -1;
     try {
+      await this.diag("pump-start", "reader=" + (!!this.reader));
       while (this.alive) {
         const { value, done } = await this.reader.read();
-        if (done) break;
+        if (done) { await this.diag("pump-done", `chunks=${chunks} bytes=${bytes}`); break; }
         if (!value || !value.length) continue;
+        if (chunks === 0) { firstLen = value.length; await this.diag("upstream-first", `len=${firstLen} hex0=${Array.from(value.slice(0,6)).map(x=>x.toString(16).padStart(2,"0")).join(" ")}`); }
         if (this.pending) {
           this.pending = false;
           const out = new Uint8Array(2 + value.length);
@@ -163,8 +166,10 @@ export class VlessDO {
         } else {
           ws.send(value);
         }
+        chunks++; bytes += value.length;
+        if (chunks === 1) await this.diag("first-sent", `total=${bytes}`);
       }
-    } catch (e) { }
+    } catch (e) { await this.diag("pump-error", e && (e.message || e)); }
     try { ws.close(1000, "eof"); } catch (e) { }
   }
 
