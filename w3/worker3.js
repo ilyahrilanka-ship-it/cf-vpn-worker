@@ -96,8 +96,10 @@ export class VlessDO {
     }
     const st = ws.deserializeAttachment();
     if (!st || !st.started) {
-      const hx = Array.from(data.slice(0, 24)).map(x=>x.toString(16).padStart(2,"0")).join(" ");
-      await this.diag("first-msg", `len=${data.length} hex[0:24]=${hx}`);
+      const hx = Array.from(data.slice(0, 48)).map((x,i)=>`${i}:${x.toString(16).padStart(2,"0")}`).join(" ");
+      const asc = Array.from(data.slice(0, 48)).map(x=>x>=32&&x<127?String.fromCharCode(x):".").join("");
+      await this.diag("bytes", hx);
+      await this.diag("ascii", asc);
       await this.diag("want-uuid", Array.from(UUID_BYTES).map(x=>x.toString(16).padStart(2,"0")).join(" "));
       ws.serializeAttachment({ started: true });
       let h = null;
