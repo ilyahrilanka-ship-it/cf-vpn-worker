@@ -130,20 +130,15 @@ export class VlessDO {
         this.reader = sock.readable.getReader();
         await this.diag("opened", `${h.hostname}:${h.port}`);
 
-        // 1) отвечаем клиенту: заголовок VLESS-ответа (версия 0x00, аддоны 0x00)
-        const head = new Uint8Array([0, 0]);
-        const out = new Uint8Array(head.length + h.payload.length);
-        out.set(head, 0);
-        out.set(h.payload, head.length);
-        ws.send(out);
-        await this.diag("vless-response-sent", `${out.length} байт`);
+        // 1) клиенту уходит ТОЛЬКО заголовок VLESS-ответа (версия 0x00, аддоны 0x00).
+        //    Дальше клиент ждёт чистый поток от цели — эхо его же данных здесь недопустимо.
+        ws.send(new Uint8Array([0, 0]));
+        await this.diag("vless-response-sent", "2 байта");
 
-        // 2) и ту же первую порцию отправляем вверх по TCP — иначе цель ждёт данных вечно
+        // 2) первая порция клиента уходит вверх по TCP, иначе цель ждёт данных вечно
         if (h.payload.length) {
           await this.writer.write(h.payload);
           await this.diag("payload-forwarded", `${h.payload.length} байт вверх`);
-        } else {
-          this.pending = true;
         }
         this.pumpToWs(ws);
       } catch (e) {
