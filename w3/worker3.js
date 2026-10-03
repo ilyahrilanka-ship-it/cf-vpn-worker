@@ -78,7 +78,9 @@ export class VlessDO {
 
   async diag(msg, extra) {
     try {
-      await this.ctx.storage.put("diag", { msg, extra: String(extra || ""), at: Date.now() });
+      const list = (await this.ctx.storage.get("diag")) || [];
+      list.push({ msg, extra: String(extra || ""), at: Date.now() });
+      await this.ctx.storage.put("diag", list.slice(-12));
     } catch (e) { }
   }
 
@@ -92,7 +94,9 @@ export class VlessDO {
     }
     const st = ws.deserializeAttachment();
     if (!st || !st.started) {
-      await this.diag("first-msg", `bytes=${data.length} head=${Array.from(data.slice(0,8)).map(x=>x.toString(16).padStart(2,"0")).join("")}`);
+      const hx = Array.from(data.slice(0, 24)).map(x=>x.toString(16).padStart(2,"0")).join(" ");
+      await this.diag("first-msg", `len=${data.length} hex[0:24]=${hx}`);
+      await this.diag("want-uuid", Array.from(UUID_BYTES).map(x=>x.toString(16).padStart(2,"0")).join(" "));
       ws.serializeAttachment({ started: true });
       let h = null;
       try { h = parseHeader(data); }
