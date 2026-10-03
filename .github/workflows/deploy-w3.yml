@@ -1,0 +1,20 @@
+name: deploy worker3
+on:
+  workflow_dispatch:
+  push:
+    paths: ['w3/**']
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm i -g wrangler@3
+      - name: deploy
+        working-directory: w3
+        run: wrangler deploy
+        env:
+          CLOUDFLARE_API_KEY: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CLOUDFLARE_EMAIL: ${{ secrets.CF_EMAIL }}
