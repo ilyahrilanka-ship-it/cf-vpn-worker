@@ -125,16 +125,26 @@ export class VlessDO {
       try {
         const sock = connect({ hostname: h.hostname, port: h.port });
         await this.diag("connect-called", `${h.hostname}:${h.port}`);
+        await sock.opened;
         this.writer = sock.writable.getWriter();
         this.reader = sock.readable.getReader();
-        await sock.opened;
         await this.diag("opened", `${h.hostname}:${h.port}`);
+
+        // 1) отвечаем клиенту: заголовок VLESS-ответа (версия 0x00, аддоны 0x00)
         const head = new Uint8Array([0, 0]);
+        const out = new Uint8Array(head.length + h.payload.length);
+        out.set(head, 0);
+        out.set(h.payload, head.length);
+        ws.send(out);
+        await this.diag("vless-response-sent", `${out.length} байт`);
+
+        // 2) и ту же первую порцию отправляем вверх по TCP — иначе цель ждёт данных вечно
         if (h.payload.length) {
-          const out = new Uint8Array(head.length + h.payload.length);
-          out.set(head, 0); out.set(h.payload, head.length);
-          ws.send(out);
-        } else this.pending = true;
+          await this.writer.write(h.payload);
+          await this.diag("payload-forwarded", `${h.payload.length} байт вверх`);
+        } else {
+          this.pending = true;
+        }
         this.pumpToWs(ws);
       } catch (e) {
         await this.diag("connect-fail", e && (e.message || e));
