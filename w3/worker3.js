@@ -104,7 +104,7 @@ export class VlessDO {
   session(ws) {
     let s = this.sessions.get(ws);
     if (!s) {
-      s = { started: false, alive: true, writer: null, reader: null };
+      s = { started: false, alive: true, writer: null, reader: null, buf: null };
       this.sessions.set(ws, s);
     }
     return s;
@@ -160,20 +160,40 @@ export class VlessDO {
   }
 
   async pump(ws, s) {
-    let bytes = 0, chunks = 0;
+    // Куски приходят по 4 КБ. Отправлять каждый отдельно — значит сжечь CPU-бюджет
+    // (30 с на входящее сообщение) на накладных расходах и потерять поток. Склеиваем
+    // в блоки по 64 КБ: вызовов send() становится в ~16 раз меньше.
+    const MAX = 65536;
+    let read = 0, sent = 0;
     try {
       while (s.alive) {
         const { value, done } = await s.reader.read();
         if (done) break;
         if (!value || !value.length) continue;
-        ws.send(value);
-        bytes += value.length;
-        if (++chunks === 1) await this.diag("first-upstream", `${value.length} Б`);
+        read += value.length;
+        if (s.buf && s.buf.length) {
+          const merged = new Uint8Array(s.buf.length + value.length);
+          merged.set(s.buf, 0);
+          merged.set(value, s.buf.length);
+          s.buf = merged;
+        } else {
+          s.buf = value.slice();
+        }
+        if (s.buf.length >= MAX) {
+          ws.send(s.buf);
+          sent += s.buf.length;
+          s.buf = null;
+          if (sent % 2097152 < MAX) await this.diag("sent", `${sent} Б из ${read}`);
+        }
+      }
+      if (s.buf && s.buf.length) {
+        ws.send(s.buf);
+        sent += s.buf.length;
       }
     } catch (e) {
       await this.diag("pump-error", e && (e.message || e));
     }
-    if (chunks) await this.diag("closed", `chunks=${chunks} bytes=${bytes}`);
+    if (sent) await this.diag("closed", `отправлено ${sent} Б, прочитано ${read} Б`);
     try { ws.close(1000, "eof"); } catch (e) {}
   }
 
