@@ -1,24 +1,24 @@
 {
- "updated": "2026-10-13 00:50:15",
+ "updated": "2026-10-13 02:38:20",
  "count": 3,
  "worker": "vpn-test.ilyahrilanka.workers.dev/sub/9f9ff8dd-ccf1-47c2-ac6d-86754efff7b6",
  "nodes": [
   {
    "name": "CF-HOST",
    "server": "vpn-test.ilyahrilanka.workers.dev:443",
-   "median_ms": 184,
+   "median_ms": 96,
    "ok": "3/3"
   },
   {
    "name": "CF-FAST-1",
-   "server": "172.64.80.1:2053",
-   "median_ms": 100,
+   "server": "104.21.71.59:2053",
+   "median_ms": 58,
    "ok": "3/3"
   },
   {
    "name": "CF-FAST-2",
-   "server": "172.67.68.157:2096",
-   "median_ms": 174,
+   "server": "104.26.12.54:443",
+   "median_ms": 59,
    "ok": "3/3"
   }
  ]
